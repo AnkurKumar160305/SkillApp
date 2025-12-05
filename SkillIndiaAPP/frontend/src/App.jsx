@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import SkillInput from './components/SkillInput';
 import RecommendationCard from './components/RecommendationCard';
 
+import Background3D from './components/Background3D';
+
 function App() {
   const [skills, setSkills] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -46,9 +48,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-black text-gray-300 font-sans selection:bg-vampire-red/30 selection:text-white overflow-hidden relative">
-      {/* Background Gradient Orbs */}
-      <div className="fixed top-[-10%] left-[-10%] w-[40%] h-[40%] bg-vampire-red/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="fixed bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none" />
+      <Background3D />
 
       <div className="container mx-auto px-4 py-16 relative z-10">
         <motion.header
