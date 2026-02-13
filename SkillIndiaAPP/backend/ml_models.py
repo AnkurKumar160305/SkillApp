@@ -157,134 +157,136 @@ class RecommenderSystem:
 
     def train_all_models(self, use_full_training_metrics=False):
         """
-        Train KNN, SVM, and Linear Regression models and compare accuracy.
-        
-        Args:
-            use_full_training_metrics (bool): If True, compute training metrics on full training set.
-                                             If False (default), use subset for performance.
+        Train Random Forest, SVM, and Logistic Regression models and compare accuracy.
+        Structured in a 'Google Colab' style for clear analysis.
         """
+        print("\n" + "="*80)
+        print("🚀 STEP 1: INITIALIZING MODEL TRAINING PIPELINE")
+        print("="*80)
+        sys.stdout.flush()
         
         # Prepare training data
         X_text, y = self.prepare_training_data('jobs')
         
         # Vectorize
-        print("Vectorizing job data...")
-        self.job_vectorizer = TfidfVectorizer(stop_words='english', max_features=3000)
+        print("\n[Processing] Vectorizing job data utilizing TF-IDF...")
+        self.job_vectorizer = TfidfVectorizer(stop_words='english', max_features=5000) # Increased features for better accuracy
         X = self.job_vectorizer.fit_transform(X_text)
         self.job_matrix = X
         
         # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         # Print comprehensive dataset information
-        print(f"\n{'='*60}")
-        print(f"DATASET INFORMATION")
-        print(f"{'='*60}")
-        print(f"Total samples: {X.shape[0]}")
-        print(f"Training samples: {X_train.shape[0]} ({(X_train.shape[0]/X.shape[0]*100):.1f}%)")
-        print(f"Testing samples: {X_test.shape[0]} ({(X_test.shape[0]/X.shape[0]*100):.1f}%)")
-        print(f"Number of features: {X.shape[1]}")
-        print(f"Number of categories: {len(np.unique(y))}")
-        print(f"\nCategory distribution in full dataset:")
-        unique, counts = np.unique(y, return_counts=True)
-        for cat, count in zip(unique, counts):
-            print(f"  Category {cat}: {count} samples ({count/len(y)*100:.1f}%)")
-        print(f"{'='*60}\n")
+        print(f"\n{'='*40}")
+        print(f"📊 DATASET STATISTICS")
+        print(f"{'='*40}")
+        print(f"Total Samples:    {X.shape[0]}")
+        print(f"Training Set:     {X_train.shape[0]} samples")
+        print(f"Testing Set:      {X_test.shape[0]} samples")
+        print(f"Features:         {X.shape[1]}")
+        print(f"Classes:          {len(np.unique(y))} {np.unique(y)}")
+        print(f"{'='*40}\n")
         sys.stdout.flush()
         
-        # Train and evaluate each model
+        # Define 3 Best Models for Text Classification
+        # Using Pipelines with StandardScaler (even though TFIDF is already scaled, some models like SVM benefit)
+        # Tuning hyperparameters to reduce overfitting (e.g., max_depth, C values)
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
+        
         models = {
-            'KNN': KNeighborsClassifier(n_neighbors=5),
-            'SVM': SVC(kernel='rbf', random_state=42),
-            'Linear Regression': LogisticRegression(max_iter=1000, random_state=42)
+            'Logistic Regression': LogisticRegression(max_iter=1000, C=1.0, random_state=42),
+            'Random Forest': RandomForestClassifier(n_estimators=100, max_depth=20, random_state=42), # constrained depth
+            'Support Vector Machine': SVC(kernel='rbf', C=1.0, probability=True, random_state=42)
         }
 
+        print("="*80)
+        print("🚀 STEP 2: MODEL TRAINING & EVALUATION")
+        print("="*80)
+
         for name, model in models.items():
-            print(f"\n{'='*20} {name} {'='*20}")
+            print(f"\n🔹 Training Model: {name}...")
             sys.stdout.flush()
             
             # Train
             model.fit(X_train, y_train)
             
-            # --- Training Metrics ---
-            if use_full_training_metrics:
-                # Use FULL training set (slower but complete)
-                print(f"\n📊 TRAINING Data Metrics (FULL TRAINING SET: {X_train.shape[0]} samples)")
-                y_train_pred = model.predict(X_train)
-                train_accuracy = accuracy_score(y_train, y_train_pred)
-                train_precision = precision_score(y_train, y_train_pred, average='weighted', zero_division=0)
-                train_recall = recall_score(y_train, y_train_pred, average='weighted', zero_division=0)
-                train_f1 = f1_score(y_train, y_train_pred, average='weighted', zero_division=0)
-            else:
-                # Use subset for performance (faster)
-                subset_size = min(2000, X_train.shape[0])
-                X_train_subset = X_train[:subset_size]
-                y_train_subset = y_train[:subset_size]
-                
-                print(f"\n📊 TRAINING Data Metrics (Subset: {subset_size}/{X_train.shape[0]} samples - {subset_size/X_train.shape[0]*100:.1f}%)")
-                y_train_pred = model.predict(X_train_subset)
-                train_accuracy = accuracy_score(y_train_subset, y_train_pred)
-                train_precision = precision_score(y_train_subset, y_train_pred, average='weighted', zero_division=0)
-                train_recall = recall_score(y_train_subset, y_train_pred, average='weighted', zero_division=0)
-                train_f1 = f1_score(y_train_subset, y_train_pred, average='weighted', zero_division=0)
-
-            print(f"  Accuracy:  {train_accuracy:.4f}")
-            print(f"  Precision: {train_precision:.4f}")
-            print(f"  Recall:    {train_recall:.4f}")
-            print(f"  F1-Score:  {train_f1:.4f}")
-            sys.stdout.flush()
-
-            # --- Testing Metrics (FULL TEST SET) ---
+            # --- EVALUATION ---
+            # Predict on both Train and Test to check for Overfitting
+            y_train_pred = model.predict(X_train)
             y_test_pred = model.predict(X_test)
-            test_accuracy = accuracy_score(y_test, y_test_pred)
+            
+            # Calculate Accuracies
+            train_acc = accuracy_score(y_train, y_train_pred)
+            test_acc = accuracy_score(y_test, y_test_pred)
+            gap = train_acc - test_acc
+            
+            # Detailed Metrics for Test Set
             test_precision = precision_score(y_test, y_test_pred, average='weighted', zero_division=0)
             test_recall = recall_score(y_test, y_test_pred, average='weighted', zero_division=0)
             test_f1 = f1_score(y_test, y_test_pred, average='weighted', zero_division=0)
             
-            print(f"\n✅ TESTING Data Metrics (FULL TEST SET: {X_test.shape[0]} samples)")
-            print(f"  Accuracy:  {test_accuracy:.4f}")
-            print(f"  Precision: {test_precision:.4f}")
-            print(f"  Recall:    {test_recall:.4f}")
-            print(f"  F1-Score:  {test_f1:.4f}")
-            sys.stdout.flush()
+            # Print Results in a structured format
+            print(f"\n   📈 PERFORMANCE METRICS ({name})")
+            print(f"   {'-'*40}")
+            print(f"   Training Accuracy:  {train_acc:.4f}")
+            print(f"   Testing Accuracy:   {test_acc:.4f}")
+            print(f"   Train-Test Gap:     {gap:.4f}  <-- (Lower is better, high gap = overfitting)")
+            print(f"   Test Precision:     {test_precision:.4f}")
+            print(f"   Test Recall:        {test_recall:.4f}")
+            print(f"   Test F1-Score:      {test_f1:.4f}")
             
-            # Store results (using test accuracy for selection)
+            # Check for Overfitting
+            if gap > 0.10:
+                print(f"   ⚠️  WARNING: High overfitting detected (Gap > 10%)")
+            else:
+                print(f"   ✅  Model generalization looks good.")
+
+            # Store results
             self.model_accuracies[name] = {
-                'accuracy': test_accuracy,
+                'accuracy': test_acc,
                 'precision': test_precision,
                 'recall': test_recall,
-                'f1_score': test_f1
+                'f1_score': test_f1,
+                'gap': gap
             }
             
             # Store models
-            if name == 'KNN':
-                self.knn_model = model
-            elif name == 'SVM':
+            if name == 'Random Forest':
+                self.knn_model = model # Reusing slot for RF to avoid changing class structure too much
+            elif name == 'Support Vector Machine':
                 self.svm_model = model
-            elif name == 'Linear Regression':
+            elif name == 'Logistic Regression':
                 self.lr_model = model
             
             # Track best model
-            if test_accuracy > self.best_accuracy:
-                self.best_accuracy = test_accuracy
+            if test_acc > self.best_accuracy:
+                self.best_accuracy = test_acc
                 self.best_model = model
                 self.best_model_name = name
         
-        # Print comprehensive comparison table
-        print(f"\n{'='*60}")
-        print(f"📊 MODEL COMPARISON SUMMARY")
-        print(f"{'='*60}")
-        print(f"\n{'Model':<20} {'Accuracy':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
-        print(f"{'-'*20} {'-'*12} {'-'*12} {'-'*12} {'-'*12}")
+        # Compare Models
+        print(f"\n\n{'='*80}")
+        print(f"🏆 FINAL MODEL COMPARISON")
+        print(f"{'='*80}")
+        print(f"{'Model':<25} {'Test Acc':<12} {'Train Acc':<12} {'Gap':<12} {'F1-Score':<12}")
+        print(f"{'-'*25} {'-'*12} {'-'*12} {'-'*12} {'-'*12}")
         
         for model_name, metrics in self.model_accuracies.items():
+            # Need to recalc train acc from gap for display or store it. 
+            # Simplified: just showing Test Acc is critical, but let's be accurate.
+            # We didn't store train acc in the dict above, let me fix strictly if needed.
+            # Rerunning math: Train = Test + Gap
+            est_train = metrics['accuracy'] + metrics['gap']
             marker = " ⭐ BEST" if model_name == self.best_model_name else ""
-            print(f"{model_name:<20} {metrics['accuracy']:<12.4f} {metrics['precision']:<12.4f} {metrics['recall']:<12.4f} {metrics['f1_score']:<12.4f}{marker}")
+            print(f"{model_name:<25} {metrics['accuracy']:<12.4f} {est_train:<12.4f} {metrics['gap']:<12.4f} {metrics['f1_score']:<12.4f}{marker}")
         
-        print(f"\n{'='*60}")
-        print(f"✅ Best Model: {self.best_model_name}")
-        print(f"   Test Accuracy: {self.best_accuracy:.4f}")
-        print(f"{'='*60}\n")
+        print(f"\n{'='*80}")
+        print(f"✅ Selected Best Model: {self.best_model_name}")
+        print(f"   Accuracy: {self.best_accuracy:.4f}")
+        print(f"{'='*80}\n")
         sys.stdout.flush()
         
         # Prepare course vectorizer

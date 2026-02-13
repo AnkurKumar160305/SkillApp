@@ -21,7 +21,7 @@ function App() {
 
     try {
       // Fetch Jobs
-      const jobsRes = await fetch('http://localhost:8000/recommend_jobs', {
+      const jobsRes = await fetch('/api/recommend_jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skills: skillsStr }),
@@ -30,7 +30,7 @@ function App() {
       setJobs(jobsData.recommendations || []);
 
       // Fetch Courses
-      const coursesRes = await fetch('http://localhost:8000/recommend_courses', {
+      const coursesRes = await fetch('/api/recommend_courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skills: skillsStr }),
