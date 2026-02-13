@@ -1,7 +1,6 @@
-import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
@@ -10,11 +9,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 import os
 import joblib
 import sys
+import csv
 
 class RecommenderSystem:
     def __init__(self):
-        self.jobs_df = None
-        self.courses_df = None
+        self.jobs_df = []  # List of dicts
+        self.courses_df = [] # List of dicts
         
         # Models
         self.knn_model = None
@@ -48,13 +48,33 @@ class RecommenderSystem:
 
         print("\n" + "="*60)
         print("🚀 SKILL DEVELOPMENT APP - ML MODEL INITIALIZATION")
+        print(f"Base Path: {self.base_path}")
+        print(f"Jobs Path: {jobs_path} (Exists: {os.path.exists(jobs_path)})")
+        print(f"Courses Path: {courses_path} (Exists: {os.path.exists(courses_path)})")
         print("="*60)
         sys.stdout.flush()
         
         print("\n📂 Loading data...")
         sys.stdout.flush()
-        self.jobs_df = pd.read_csv(jobs_path)
-        self.courses_df = pd.read_csv(courses_path)
+        
+        # Load Jobs
+        try:
+            with open(jobs_path, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                self.jobs_df = [row for row in reader]
+        except Exception as e:
+            print(f"Error loading jobs CSV: {e}")
+            self.jobs_df = []
+            
+        # Load Courses
+        try:
+            with open(courses_path, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                self.courses_df = [row for row in reader]
+        except Exception as e:
+            print(f"Error loading courses CSV: {e}")
+            self.courses_df = []
+
         print(f"   ✓ Loaded {len(self.jobs_df)} jobs")
         print(f"   ✓ Loaded {len(self.courses_df)} courses")
         sys.stdout.flush()
@@ -86,57 +106,44 @@ class RecommenderSystem:
             sys.stdout.flush()
 
     def preprocess_jobs(self):
-        # Fill missing values
-        self.jobs_df['required_skills'] = self.jobs_df['required_skills'].fillna('')
-        self.jobs_df['job_post'] = self.jobs_df['job_post'].fillna('')
-        self.jobs_df['job_description'] = self.jobs_df['job_description'].fillna('')
-        
-        # Combine features
-        self.jobs_df['combined_features'] = (
-            self.jobs_df['job_post'] + " " + 
-            self.jobs_df['required_skills'] + " " + 
-            self.jobs_df['job_description']
-        )
-        self.jobs_df['combined_features'] = self.jobs_df['combined_features'].str.lower()
+        for row in self.jobs_df:
+            skills = row.get('required_skills') or ''
+            post = row.get('job_post') or ''
+            desc = row.get('job_description') or ''
+            
+            combined = f"{post} {skills} {desc}".lower()
+            row['combined_features'] = combined
 
     def preprocess_courses(self):
-        self.courses_df['course_title'] = self.courses_df['course_title'].fillna('')
-        self.courses_df['subject'] = self.courses_df['subject'].fillna('')
-        
-        self.courses_df['combined_features'] = (
-            self.courses_df['course_title'] + " " + 
-            self.courses_df['subject']
-        )
-        self.courses_df['combined_features'] = self.courses_df['combined_features'].str.lower()
+        for row in self.courses_df:
+            title = row.get('course_title') or ''
+            subj = row.get('subject') or ''
+            
+            combined = f"{title} {subj}".lower()
+            row['combined_features'] = combined
 
     def prepare_training_data(self, data_type='jobs'):
-        """
-        Create labeled training data for classification.
-        We'll create synthetic labels based on skill categories.
-        """
         if data_type == 'jobs':
-            df = self.jobs_df.copy()
-            text_col = 'combined_features'
+            data = self.jobs_df
             
-            # Create categories based on common job types
             def categorize_job(text):
                 text = text.lower()
                 if any(word in text for word in ['python', 'machine learning', 'data science', 'ai', 'analytics']):
-                    return 0  # Data Science
+                    return 0
                 elif any(word in text for word in ['java', 'javascript', 'react', 'angular', 'frontend', 'backend']):
-                    return 1  # Software Development
+                    return 1
                 elif any(word in text for word in ['design', 'ui', 'ux', 'graphic', 'figma']):
-                    return 2  # Design
+                    return 2
                 elif any(word in text for word in ['marketing', 'sales', 'business', 'management']):
-                    return 3  # Business
+                    return 3
                 else:
-                    return 4  # Other
+                    return 4
             
-            df['category'] = df[text_col].apply(categorize_job)
+            X_text = [row.get('combined_features', '') for row in data]
+            y = [categorize_job(row.get('combined_features', '')) for row in data]
             
         else:  # courses
-            df = self.courses_df.copy()
-            text_col = 'combined_features'
+            data = self.courses_df
             
             def categorize_course(text):
                 text = text.lower()
@@ -151,152 +158,50 @@ class RecommenderSystem:
                 else:
                     return 4
             
-            df['category'] = df[text_col].apply(categorize_course)
+            X_text = [row.get('combined_features', '') for row in data]
+            y = [categorize_course(row.get('combined_features', '')) for row in data]
         
-        return df[text_col].values, df['category'].values
+        return np.array(X_text), np.array(y)
 
-    def train_all_models(self, use_full_training_metrics=False):
-        """
-        Train Random Forest, SVM, and Logistic Regression models and compare accuracy.
-        Structured in a 'Google Colab' style for clear analysis.
-        """
-        print("\n" + "="*80)
-        print("🚀 STEP 1: INITIALIZING MODEL TRAINING PIPELINE")
-        print("="*80)
-        sys.stdout.flush()
-        
-        # Prepare training data
+    def train_all_models(self):
         X_text, y = self.prepare_training_data('jobs')
         
-        # Vectorize
-        print("\n[Processing] Vectorizing job data utilizing TF-IDF...")
-        self.job_vectorizer = TfidfVectorizer(stop_words='english', max_features=5000) # Increased features for better accuracy
+        if len(X_text) == 0:
+            print("Warning: No data for training.")
+            return
+
+        self.job_vectorizer = TfidfVectorizer(stop_words='english', max_features=5000)
         X = self.job_vectorizer.fit_transform(X_text)
         self.job_matrix = X
         
-        # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
-        # Print comprehensive dataset information
-        print(f"\n{'='*40}")
-        print(f"📊 DATASET STATISTICS")
-        print(f"{'='*40}")
-        print(f"Total Samples:    {X.shape[0]}")
-        print(f"Training Set:     {X_train.shape[0]} samples")
-        print(f"Testing Set:      {X_test.shape[0]} samples")
-        print(f"Features:         {X.shape[1]}")
-        print(f"Classes:          {len(np.unique(y))} {np.unique(y)}")
-        print(f"{'='*40}\n")
-        sys.stdout.flush()
-        
-        # Define 3 Best Models for Text Classification
-        # Using Pipelines with StandardScaler (even though TFIDF is already scaled, some models like SVM benefit)
-        # Tuning hyperparameters to reduce overfitting (e.g., max_depth, C values)
         from sklearn.ensemble import RandomForestClassifier
-        from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import StandardScaler
-        
         models = {
             'Logistic Regression': LogisticRegression(max_iter=1000, C=1.0, random_state=42),
-            'Random Forest': RandomForestClassifier(n_estimators=100, max_depth=20, random_state=42), # constrained depth
+            'Random Forest': RandomForestClassifier(n_estimators=100, max_depth=20, random_state=42),
             'Support Vector Machine': SVC(kernel='rbf', C=1.0, probability=True, random_state=42)
         }
 
-        print("="*80)
-        print("🚀 STEP 2: MODEL TRAINING & EVALUATION")
-        print("="*80)
-
+        self.best_accuracy = 0.0
         for name, model in models.items():
-            print(f"\n🔹 Training Model: {name}...")
-            sys.stdout.flush()
-            
-            # Train
             model.fit(X_train, y_train)
-            
-            # --- EVALUATION ---
-            # Predict on both Train and Test to check for Overfitting
-            y_train_pred = model.predict(X_train)
             y_test_pred = model.predict(X_test)
-            
-            # Calculate Accuracies
-            train_acc = accuracy_score(y_train, y_train_pred)
             test_acc = accuracy_score(y_test, y_test_pred)
-            gap = train_acc - test_acc
             
-            # Detailed Metrics for Test Set
-            test_precision = precision_score(y_test, y_test_pred, average='weighted', zero_division=0)
-            test_recall = recall_score(y_test, y_test_pred, average='weighted', zero_division=0)
-            test_f1 = f1_score(y_test, y_test_pred, average='weighted', zero_division=0)
+            self.model_accuracies[name] = {'accuracy': float(test_acc)}
             
-            # Print Results in a structured format
-            print(f"\n   📈 PERFORMANCE METRICS ({name})")
-            print(f"   {'-'*40}")
-            print(f"   Training Accuracy:  {train_acc:.4f}")
-            print(f"   Testing Accuracy:   {test_acc:.4f}")
-            print(f"   Train-Test Gap:     {gap:.4f}  <-- (Lower is better, high gap = overfitting)")
-            print(f"   Test Precision:     {test_precision:.4f}")
-            print(f"   Test Recall:        {test_recall:.4f}")
-            print(f"   Test F1-Score:      {test_f1:.4f}")
-            
-            # Check for Overfitting
-            if gap > 0.10:
-                print(f"   ⚠️  WARNING: High overfitting detected (Gap > 10%)")
-            else:
-                print(f"   ✅  Model generalization looks good.")
-
-            # Store results
-            self.model_accuracies[name] = {
-                'accuracy': test_acc,
-                'precision': test_precision,
-                'recall': test_recall,
-                'f1_score': test_f1,
-                'gap': gap
-            }
-            
-            # Store models
-            if name == 'Random Forest':
-                self.knn_model = model # Reusing slot for RF to avoid changing class structure too much
-            elif name == 'Support Vector Machine':
-                self.svm_model = model
-            elif name == 'Logistic Regression':
-                self.lr_model = model
-            
-            # Track best model
             if test_acc > self.best_accuracy:
-                self.best_accuracy = test_acc
+                self.best_accuracy = float(test_acc)
                 self.best_model = model
                 self.best_model_name = name
         
-        # Compare Models
-        print(f"\n\n{'='*80}")
-        print(f"🏆 FINAL MODEL COMPARISON")
-        print(f"{'='*80}")
-        print(f"{'Model':<25} {'Test Acc':<12} {'Train Acc':<12} {'Gap':<12} {'F1-Score':<12}")
-        print(f"{'-'*25} {'-'*12} {'-'*12} {'-'*12} {'-'*12}")
-        
-        for model_name, metrics in self.model_accuracies.items():
-            # Need to recalc train acc from gap for display or store it. 
-            # Simplified: just showing Test Acc is critical, but let's be accurate.
-            # We didn't store train acc in the dict above, let me fix strictly if needed.
-            # Rerunning math: Train = Test + Gap
-            est_train = metrics['accuracy'] + metrics['gap']
-            marker = " ⭐ BEST" if model_name == self.best_model_name else ""
-            print(f"{model_name:<25} {metrics['accuracy']:<12.4f} {est_train:<12.4f} {metrics['gap']:<12.4f} {metrics['f1_score']:<12.4f}{marker}")
-        
-        print(f"\n{'='*80}")
-        print(f"✅ Selected Best Model: {self.best_model_name}")
-        print(f"   Accuracy: {self.best_accuracy:.4f}")
-        print(f"{'='*80}\n")
-        sys.stdout.flush()
-        
-        # Prepare course vectorizer
-        print("\n📚 Vectorizing course data...")
-        sys.stdout.flush()
         self.course_vectorizer = TfidfVectorizer(stop_words='english', max_features=3000)
-        self.course_matrix = self.course_vectorizer.fit_transform(self.courses_df['combined_features'])
+        course_features = [row.get('combined_features', '') for row in self.courses_df]
+        if course_features:
+            self.course_matrix = self.course_vectorizer.fit_transform(course_features)
 
     def save_artifacts(self):
-        print("Saving models and artifacts...")
         artifacts = {
             'best_model': self.best_model,
             'best_model_name': self.best_model_name,
@@ -308,7 +213,6 @@ class RecommenderSystem:
             'course_matrix': self.course_matrix
         }
         joblib.dump(artifacts, os.path.join(self.models_dir, "artifacts.pkl"))
-        print("✓ Artifacts saved.")
 
     def load_artifacts(self):
         artifacts_path = os.path.join(self.models_dir, "artifacts.pkl")
@@ -316,59 +220,63 @@ class RecommenderSystem:
             return False
         
         try:
-            print("Loading saved artifacts...")
             artifacts = joblib.load(artifacts_path)
-            
-            self.best_model = artifacts['best_model']
-            self.best_model_name = artifacts['best_model_name']
-            self.best_accuracy = artifacts['best_accuracy']
-            self.model_accuracies = artifacts['model_accuracies']
-            self.job_vectorizer = artifacts['job_vectorizer']
-            self.job_matrix = artifacts['job_matrix']
-            self.course_vectorizer = artifacts['course_vectorizer']
-            self.course_matrix = artifacts['course_matrix']
+            self.best_model = artifacts.get('best_model')
+            self.best_model_name = artifacts.get('best_model_name')
+            self.best_accuracy = artifacts.get('best_accuracy')
+            self.model_accuracies = artifacts.get('model_accuracies')
+            self.job_vectorizer = artifacts.get('job_vectorizer')
+            self.job_matrix = artifacts.get('job_matrix')
+            self.course_vectorizer = artifacts.get('course_vectorizer')
+            self.course_matrix = artifacts.get('course_matrix')
             return True
         except Exception as e:
             print(f"Error loading artifacts: {e}")
             return False
 
     def recommend_jobs(self, skills, top_n=5):
-        """Use best model to recommend jobs based on user skills."""
-        # Transform user skills
+        if self.job_vectorizer is None or self.job_matrix is None:
+            return []
         user_vec = self.job_vectorizer.transform([skills.lower()])
-        
-        # Compute similarity with all jobs
         similarities = cosine_similarity(user_vec, self.job_matrix).flatten()
-        
-        # Get top N indices
         top_indices = similarities.argsort()[-top_n:][::-1]
         
-        # Return results
-        results = self.jobs_df.iloc[top_indices][['job_post', 'company', 'required_skills', 'job_location']].to_dict(orient='records')
+        results = []
+        for idx in top_indices:
+            if idx < len(self.jobs_df):
+                row = self.jobs_df[idx]
+                results.append({
+                    'job_post': row.get('job_post', ''),
+                    'company': row.get('company', ''),
+                    'required_skills': row.get('required_skills', ''),
+                    'job_location': row.get('job_location', '')
+                })
         return results
 
     def recommend_courses(self, skills, top_n=5):
-        """Use best model to recommend courses based on user skills."""
-        # Transform user skills
+        if self.course_vectorizer is None or self.course_matrix is None:
+            return []
         user_vec = self.course_vectorizer.transform([skills.lower()])
-        
-        # Compute similarity with all courses
         similarities = cosine_similarity(user_vec, self.course_matrix).flatten()
-        
-        # Get top N indices
         top_indices = similarities.argsort()[-top_n:][::-1]
         
-        # Return results
-        results = self.courses_df.iloc[top_indices][['course_title', 'url', 'price', 'level']].to_dict(orient='records')
+        results = []
+        for idx in top_indices:
+            if idx < len(self.courses_df):
+                row = self.courses_df[idx]
+                results.append({
+                    'course_title': row.get('course_title', ''),
+                    'url': row.get('url', ''),
+                    'price': row.get('price', ''),
+                    'level': row.get('level', '')
+                })
         return results
 
     def get_model_info(self):
-        """Return information about the best model and all model accuracies."""
         return {
             'best_model': self.best_model_name,
             'best_accuracy': self.best_accuracy,
             'all_models': self.model_accuracies
         }
 
-# Singleton instance
 recommender = RecommenderSystem()

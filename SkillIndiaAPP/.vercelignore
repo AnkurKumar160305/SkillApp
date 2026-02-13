@@ -1,4 +1,11 @@
-backend/models/
-*.csv
+# Exclude generated node_modules from upload
+node_modules/
+frontend/node_modules/
+
+# Exclude large non-essential files
 *.pptx
 *.pdf
+
+# Keep frontend/src and frontend/public for building!
+# Keep backend/ and api/ for the Python function
+# Keep Naukri_Jobs_Data.csv and udemy_courses.csv for the Recommender
